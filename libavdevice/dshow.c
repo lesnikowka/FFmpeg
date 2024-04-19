@@ -31,6 +31,10 @@
 #include "libavcodec/raw.h"
 #include "objidl.h"
 #include "shlwapi.h"
+#include <Windows.h>
+#include <mmsystem.h>
+#include <Functiondiscoverykeys_devpkey.h>
+#include <comdef.h>
 // NB: technically, we should include dxva.h and use
 // DXVA_ExtendedFormat, but that type is not defined in
 // the MinGW headers. The DXVA2_ExtendedFormat and the
@@ -452,6 +456,106 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
 }
 
 /**
+ * needs to add description
+ */
+static int 
+log_advanced_device_information(LPWSTR friendly_name_w)
+{
+    IMMDeviceEnumerator* devEnum;
+    IMMDeviceCollection* collection = NULL;
+    HRESULT h;
+    IMMDevice* device = NULL;
+    IPropertyStore* store = NULL;
+    IAudioClient* client = NULL;
+    PROPVARIANT friendly_name;
+    LPWSTR big_friendly_name_w;
+    PropVariantInit(&friendly_name);
+    WAVEFORMATEX* wave = NULL;
+    int is_names_equal;
+    int count;
+
+    h = CoCreateInstance(
+         __uuidof(MMDeviceEnumerator), NULL,
+         CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
+         (void**)&pEnumerator);
+    if (h != S_OK)
+    {
+        return 1;
+    }
+
+    h = devEnum->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &collection);
+    if (h != S_OK)
+    {
+        return 1;
+    }
+    h = collection->GetCount(&count);
+    if (h != S_OK)
+    {
+        return 1;
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+        store = NULL;
+        h = collection->Item(i, &device);
+        if (h != S_OK)
+        {
+            return 1;
+        }
+        h = device->OpenProperty(STGM_READ, &store);
+        if (h != S_OK)
+        {
+            return 1;
+        }
+        h = store->GetValue(PKEY_Device_FriendlyName, &frindlyName);
+        if (h != S_OK)
+        {
+            return 1;
+        }
+        if (store)
+        {
+            store->Release();
+        }
+
+        big_friendly_name_w = store.pwszVal;
+        is_names_equal = 1;
+        for (int i = 0; i < min(wcslen(friendly_name_w), wcslen(big_friendly_name_w); i++)
+        {
+            if (friendly_name_w[i] != big_friendly_name_w[i])
+            {
+                device->Release();
+                isNamesEqual = 0;
+                break;
+            }
+        }
+        if (is_names_equal)
+        {
+            break;
+        }
+    }
+    if (!is_names_equal)
+    {
+        return 0;
+    }
+
+    h = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&client);
+    if (h != S_OK)
+    {
+        return 1;
+    }
+    h = client->GetMixFormat(&wave);
+    if (h != S_OK)
+    {
+        return 1;
+    }
+
+    av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", wave->nChannels);
+    av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", wave->nAvgBytesPerSec);
+
+    return 0;
+}
+
+/**
  * Cycle through available devices using the device enumerator devenum,
  * retrieve the device with type specified by devtype and return the
  * pointer to the object found in *pfilter.
@@ -525,7 +629,8 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
         r = IPropertyBag_Read(bag, L"FriendlyName", &var, NULL);
         if (r != S_OK)
             goto fail;
-        friendly_name = dup_wchar_to_utf8(var.bstrVal);
+        LPWSTR friendly_name_w = var.bstrVal
+        friendly_name = dup_wchar_to_utf8(friendly_name_w);
 
         if (pfilter) {
             if (strcmp(device_name, friendly_name) && strcmp(device_name, unique_name))
@@ -590,6 +695,11 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 }
                 av_log(avctx, AV_LOG_INFO, "\n");
                 av_log(avctx, AV_LOG_INFO, "  Alternative name \"%s\"\n", unique_name);
+
+                if (log_advanced_device_information(friendly_name_w))
+                {
+                    av_log(avctx, AV_LOG_INFO, "Cannot show advanced information");
+                }
             }
         }
 
