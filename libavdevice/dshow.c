@@ -32,7 +32,9 @@
 #include "objidl.h"
 #include "shlwapi.h"
 #include <Windows.h>
+#include <Audioclient.h>
 #include <mmsystem.h>
+#include <Mmdeviceapi.h>
 #include <Functiondiscoverykeys_devpkey.h>
 #include <comdef.h>
 // NB: technically, we should include dxva.h and use
@@ -477,7 +479,7 @@ log_advanced_device_information(LPWSTR friendly_name_w)
     h = CoCreateInstance(
          __uuidof(MMDeviceEnumerator), NULL,
          CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
-         (void**)&pEnumerator);
+         (void**)&devEnum);
     if (h != S_OK)
     {
         return 1;
@@ -507,7 +509,7 @@ log_advanced_device_information(LPWSTR friendly_name_w)
         {
             return 1;
         }
-        h = store->GetValue(PKEY_Device_FriendlyName, &frindlyName);
+        h = store->GetValue(PKEY_Device_FriendlyName, &friendly_name);
         if (h != S_OK)
         {
             return 1;
@@ -517,9 +519,9 @@ log_advanced_device_information(LPWSTR friendly_name_w)
             store->Release();
         }
 
-        big_friendly_name_w = store.pwszVal;
+        big_friendly_name_w = friendly_name.pwszVal;
         is_names_equal = 1;
-        for (int i = 0; i < min(wcslen(friendly_name_w), wcslen(big_friendly_name_w); i++)
+        for (int i = 0; i < min(wcslen(friendly_name_w), wcslen(big_friendly_name_w)); i++)
         {
             if (friendly_name_w[i] != big_friendly_name_w[i])
             {
