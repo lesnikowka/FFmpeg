@@ -1,5 +1,6 @@
 #include "advanced_audio_info.hpp"
 
+#pragma comment(lib, "Winmm.lib")
 
 std::vector<DeviceInfo>  log_advanced_device_information()
 {
@@ -80,5 +81,52 @@ std::vector<DeviceInfo>  log_advanced_device_information()
         device_info.push_back(DeviceInfo{big_friendly_name_w, wave->nChannels, wave->nAvgBytesPerSec});
     }
 
+    device_info = sort_device_information(device_info);
+
     return device_info;
+}
+
+std::vector<DeviceInfo> sort_device_information(const std::vector<DeviceInfo>& info)
+{
+    std::vector<DeviceInfo> sorted;
+
+    int devices_count = waveInGetNumDevs();
+
+    WAVEINCAPSW wave = {};
+
+    for (int i = 0; i < devices_count; i++)
+    {
+        int num = i;
+        waveInGetDevCapsW(num, &wave, sizeof(WAVEINCAPSW));
+        std::wstring device_name(wave.szPname);
+
+        for (const DeviceInfo& dev_info : info)
+        {
+            if (is_part(device_name, dev_info.name))
+            {
+                sorted.push_back(dev_info);
+                break;
+            }
+        }
+    }
+
+    return sorted;
+}
+
+bool is_part(const std::wstring& part, const std::wstring& full)
+{
+    if (part.size() > full.size())
+    {
+        return false;
+    }
+
+    for (int i = 0; i < part.size(); i++)
+    {
+        if (part[i] != full[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
