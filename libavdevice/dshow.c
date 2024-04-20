@@ -455,7 +455,7 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
 /**
  * needs description
  */
-static int get_int_array(char* data, int size, int** dest, int* dest_size)
+static void get_int_array(char* data, int size, int** dest, int* dest_size)
 {
     char numbers[128][128];
     int i;
@@ -555,6 +555,8 @@ static int get_advanced_device_information
         return 1;
     }
 
+    get_int_array(chBuf, dwRead, data, size);
+
     CloseHandle(pi.hProcess);
     ZeroMemory(&pi, sizeof(pi));
 }
@@ -586,6 +588,9 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                                    &CLSID_AudioInputDeviceCategory };
     const char *devtypename = (devtype == VideoDevice) ? "video" : "audio only";
     const char *sourcetypename = (sourcetype == VideoSourceDevice) ? "video" : "audio";
+    int* numbers;
+    int num_size;
+    int num_index = 0;
 
     r = ICreateDevEnum_CreateClassEnumerator(devenum, device_guid[sourcetype],
                                              (IEnumMoniker **) &classenum, 0);
@@ -594,6 +599,8 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                devtypename);
         return AVERROR(EIO);
     }
+
+    get_advanced_device_information(&numbers, &num_size);
 
     while (!device_filter && IEnumMoniker_Next(classenum, 1, &m, NULL) == S_OK) {
         IPropertyBag *bag = NULL;
@@ -705,10 +712,12 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                     av_log(avctx, AV_LOG_INFO, "Cannot show advanced information");
                 }
 
-                av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", wave->nChannels);
-                av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", wave->nAvgBytesPerSec);
+                av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", numbers[num_index*2]);
+                av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", numbers[num_index*2+1]);
             }
         }
+
+        ++num_index;
 
     fail:
         av_freep(&media_types);
