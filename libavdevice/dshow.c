@@ -32,11 +32,6 @@
 #include "objidl.h"
 #include "shlwapi.h"
 #include <Windows.h>
-#include <Audioclient.h>
-#include <mmsystem.h>
-#include <mmdeviceapi.h>
-#include <Functiondiscoverykeys_devpkey.h>
-#include <comdef.h>
 // NB: technically, we should include dxva.h and use
 // DXVA_ExtendedFormat, but that type is not defined in
 // the MinGW headers. The DXVA2_ExtendedFormat and the
@@ -458,106 +453,110 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
 }
 
 /**
- * needs to add description
+ * needs description
  */
-static int 
-log_advanced_device_information(AVFormatContext *avctx, wchar_t * friendly_name_w)
+static int get_int_array(char* data, int size, int** dest, int* dest_size)
 {
-    IMMDeviceEnumerator* devEnum;
-    IMMDeviceCollection* collection = NULL;
-    HRESULT h;
-    IMMDevice* device = NULL;
-    IPropertyStore* store = NULL;
-    IAudioClient* client = NULL;
-    PROPVARIANT friendly_name;
-    wchar_t* big_friendly_name_w;
-    PropVariantInit(&friendly_name);
-    WAVEFORMATEX* wave = NULL;
-    int is_names_equal;
-    int count;
+    char numbers[128][128];
+    int i;
+    int prev = 0;
+    int num_index = 0;
 
-    const CLSID CLSID_MMDeviceEnumerator = _uuidof(MMDeviceEnumerator);
-    const IID IID_IMMDeviceEnumerator = _uuidof(IMMDeviceEnumerator);
+    for (i = 0; i < 128; i++)
+    {
+        memset(numbers[i], 0, 128);
+    }
 
-    h = CoCreateInstance(
-         (REFCLSID)CLSID_MMDeviceEnumerator, NULL,
-         CLSCTX_ALL, (REFIID)IID_IMMDeviceEnumerator,
-         (void**)&devEnum);
-    if (h != S_OK)
+    for (i = 0; i < size; i++) //asdc\r
+    {
+        if (data[i] == '\r')
+        {
+            memcpy(numbers[num_index], data + prev, i - prev);
+            prev = i + 2;
+            num_index += 1;
+        }
+    }
+
+    *dest = new int[num_index];
+    *dest_size = num_index;
+
+    for (i = 0; i < num_index; i++)
+    {
+        (*dest)[i] = stoi(numbers[i]);
+    }
+}
+
+
+/**
+ * needs description
+ */
+static int get_advanced_device_information
+(int** data, int* size)
+{
+    const wchar_t* commandline = L"advanced_audio_info.exe 1";
+    wchar_t commandlinea[28]
+
+    HANDLE m_hChildStd_OUT_Rd = NULL;
+    HANDLE m_hChildStd_OUT_Wr = NULL;
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+    SECURITY_ATTRIBUTES saAttr;
+    BOOL bSuccess;
+    CHAR chBuf[1024];
+    DWORD dwRead;
+    
+    memset(chBuf, 0, 1024);
+    memcpy(commandlinea, commandline, 28);
+
+    ZeroMemory(&saAttr, sizeof(saAttr));
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    saAttr.bInheritHandle = TRUE;
+    saAttr.lpSecurityDescriptor = NULL;
+
+    if (!CreatePipe(&m_hChildStd_OUT_Rd, &m_hChildStd_OUT_Wr, &saAttr, 0))
     {
         return 1;
     }
 
-    h = devEnum->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &collection);
-    if (h != S_OK)
-    {
-        return 1;
-    }
-    h = collection->GetCount(&count);
-    if (h != S_OK)
+    if (!SetHandleInformation(m_hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0))
     {
         return 1;
     }
 
-    for (int i = 0; i < count; i++)
-    {
-        store = NULL;
-        h = collection->Item(i, &device);
-        if (h != S_OK)
-        {
-            return 1;
-        }
-        h = device->OpenProperty(STGM_READ, &store);
-        if (h != S_OK)
-        {
-            return 1;
-        }
-        h = store->GetValue(PKEY_Device_FriendlyName, &friendly_name);
-        if (h != S_OK)
-        {
-            return 1;
-        }
-        if (store)
-        {
-            store->Release();
-        }
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.hStdError = m_hChildStd_OUT_Wr;
+    si.hStdOutput = m_hChildStd_OUT_Wr;
+    si.dwFlags |= STARTF_USESTDHANDLES;
 
-        big_friendly_name_w = friendly_name.pwszVal;
-        is_names_equal = 1;
-        for (int i = 0; i < min(wcslen(friendly_name_w), wcslen(big_friendly_name_w)); i++)
-        {
-            if (friendly_name_w[i] != big_friendly_name_w[i])
-            {
-                device->Release();
-                is_names_equal = 0;
-                break;
-            }
-        }
-        if (is_names_equal)
-        {
-            break;
-        }
-    }
-    if (!is_names_equal)
-    {
-        return 0;
-    }
-
-    h = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&client);
-    if (h != S_OK)
-    {
-        return 1;
-    }
-    h = client->GetMixFormat(&wave);
-    if (h != S_OK)
+    if (!CreateProcess(NULL,   
+        commandlinea,    
+        NULL,                          
+        NULL,                          
+        TRUE,                          
+        0,                             
+        NULL,                           
+        NULL,                           
+        &si,                            
+        &pi)                            
+        )
     {
         return 1;
     }
 
-    av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", wave->nChannels);
-    av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", wave->nAvgBytesPerSec);
+    WaitForSingleObject(pi.hProcess, INFINITE);
 
-    return 0;
+    bSuccess = ReadFile(m_hChildStd_OUT_Rd, chBuf, BUFSIZE, &dwRead, NULL);
+
+    if (!bSuccess)
+    {
+        CloseHandle(pi.hProcess);
+        ZeroMemory(&pi, sizeof(pi));
+        return 1;
+    }
+
+    CloseHandle(pi.hProcess);
+    ZeroMemory(&pi, sizeof(pi));
 }
 
 /**
@@ -705,6 +704,9 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 {
                     av_log(avctx, AV_LOG_INFO, "Cannot show advanced information");
                 }
+
+                av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", wave->nChannels);
+                av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", wave->nAvgBytesPerSec);
             }
         }
 
