@@ -32,6 +32,9 @@
 #include "objidl.h"
 #include "shlwapi.h"
 #include <Windows.h>
+#include <string.h>
+#include <stdio.h> 
+#include <stdlib.h>
 // NB: technically, we should include dxva.h and use
 // DXVA_ExtendedFormat, but that type is not defined in
 // the MinGW headers. The DXVA2_ExtendedFormat and the
@@ -477,12 +480,12 @@ static void get_int_array(char* data, int size, int** dest, int* dest_size)
         }
     }
 
-    *dest = new int[num_index];
+    *dest = calloc(num_index, sizeof(int));
     *dest_size = num_index;
 
     for (i = 0; i < num_index; i++)
     {
-        (*dest)[i] = stoi(numbers[i]);
+        (*dest)[i] = atoi(numbers[i]);
     }
 }
 
@@ -493,8 +496,8 @@ static void get_int_array(char* data, int size, int** dest, int* dest_size)
 static int get_advanced_device_information
 (int** data, int* size)
 {
-    const wchar_t* commandline = L"advanced_audio_info.exe 1";
-    wchar_t commandlinea[28]
+    const char* commandline = "advanced_audio_info.exe 1";
+    char commandlinea[28];
 
     HANDLE m_hChildStd_OUT_Rd = NULL;
     HANDLE m_hChildStd_OUT_Wr = NULL;
@@ -546,7 +549,7 @@ static int get_advanced_device_information
 
     WaitForSingleObject(pi.hProcess, INFINITE);
 
-    bSuccess = ReadFile(m_hChildStd_OUT_Rd, chBuf, BUFSIZE, &dwRead, NULL);
+    bSuccess = ReadFile(m_hChildStd_OUT_Rd, chBuf, 1024, &dwRead, NULL);
 
     if (!bSuccess)
     {
@@ -559,6 +562,8 @@ static int get_advanced_device_information
 
     CloseHandle(pi.hProcess);
     ZeroMemory(&pi, sizeof(pi));
+
+    return 0;
 }
 
 /**
@@ -589,8 +594,9 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
     const char *devtypename = (devtype == VideoDevice) ? "video" : "audio only";
     const char *sourcetypename = (sourcetype == VideoSourceDevice) ? "video" : "audio";
     int* numbers;
-    int num_size;
+    int num_size = 0;
     int num_index = 0;
+    BOOL advanced_got;
 
     r = ICreateDevEnum_CreateClassEnumerator(devenum, device_guid[sourcetype],
                                              (IEnumMoniker **) &classenum, 0);
@@ -600,7 +606,7 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
         return AVERROR(EIO);
     }
 
-    get_advanced_device_information(&numbers, &num_size);
+    advanced_got = get_advanced_device_information(&numbers, &num_size);
 
     while (!device_filter && IEnumMoniker_Next(classenum, 1, &m, NULL) == S_OK) {
         IPropertyBag *bag = NULL;
@@ -640,8 +646,7 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
         r = IPropertyBag_Read(bag, L"FriendlyName", &var, NULL);
         if (r != S_OK)
             goto fail;
-        const wchar_t* friendly_name_w = var.bstrVal
-        friendly_name = dup_wchar_to_utf8(friendly_name_w);
+        friendly_name = dup_wchar_to_utf8(var.bstrVal);
 
         if (pfilter) {
             if (strcmp(device_name, friendly_name) && strcmp(device_name, unique_name))
@@ -707,13 +712,11 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 av_log(avctx, AV_LOG_INFO, "\n");
                 av_log(avctx, AV_LOG_INFO, "  Alternative name \"%s\"\n", unique_name);
 
-                if (log_advanced_device_information(avctx, friendly_name_w))
+                if (advanced_got && num_index < num_size)
                 {
-                    av_log(avctx, AV_LOG_INFO, "Cannot show advanced information");
+                    av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", numbers[num_index*2]);
+                    av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", numbers[num_index*2+1]);
                 }
-
-                av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", numbers[num_index*2]);
-                av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", numbers[num_index*2+1]);
             }
         }
 
