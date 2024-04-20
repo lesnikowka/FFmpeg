@@ -34,7 +34,7 @@
 #include <Windows.h>
 #include <Audioclient.h>
 #include <mmsystem.h>
-#include <Mmdeviceapi.h>
+#include <mmdeviceapi.h>
 #include <Functiondiscoverykeys_devpkey.h>
 #include <comdef.h>
 // NB: technically, we should include dxva.h and use
@@ -461,7 +461,7 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
  * needs to add description
  */
 static int 
-log_advanced_device_information(LPWSTR friendly_name_w)
+log_advanced_device_information(AVFormatContext *avctx, wchar_t * friendly_name_w)
 {
     IMMDeviceEnumerator* devEnum;
     IMMDeviceCollection* collection = NULL;
@@ -470,15 +470,18 @@ log_advanced_device_information(LPWSTR friendly_name_w)
     IPropertyStore* store = NULL;
     IAudioClient* client = NULL;
     PROPVARIANT friendly_name;
-    LPWSTR big_friendly_name_w;
+    wchar_t* big_friendly_name_w;
     PropVariantInit(&friendly_name);
     WAVEFORMATEX* wave = NULL;
     int is_names_equal;
     int count;
 
+    const CLSID CLSID_MMDeviceEnumerator = _uuidof(MMDeviceEnumerator);
+    const IID IID_IMMDeviceEnumerator = _uuidof(IMMDeviceEnumerator);
+
     h = CoCreateInstance(
-         __uuidof(MMDeviceEnumerator), NULL,
-         CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
+         (REFCLSID)CLSID_MMDeviceEnumerator, NULL,
+         CLSCTX_ALL, (REFIID)IID_IMMDeviceEnumerator,
          (void**)&devEnum);
     if (h != S_OK)
     {
@@ -526,7 +529,7 @@ log_advanced_device_information(LPWSTR friendly_name_w)
             if (friendly_name_w[i] != big_friendly_name_w[i])
             {
                 device->Release();
-                isNamesEqual = 0;
+                is_names_equal = 0;
                 break;
             }
         }
@@ -631,7 +634,7 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
         r = IPropertyBag_Read(bag, L"FriendlyName", &var, NULL);
         if (r != S_OK)
             goto fail;
-        LPWSTR friendly_name_w = var.bstrVal
+        const wchar_t* friendly_name_w = var.bstrVal
         friendly_name = dup_wchar_to_utf8(friendly_name_w);
 
         if (pfilter) {
@@ -698,7 +701,7 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 av_log(avctx, AV_LOG_INFO, "\n");
                 av_log(avctx, AV_LOG_INFO, "  Alternative name \"%s\"\n", unique_name);
 
-                if (log_advanced_device_information(friendly_name_w))
+                if (log_advanced_device_information(avctx, friendly_name_w))
                 {
                     av_log(avctx, AV_LOG_INFO, "Cannot show advanced information");
                 }
