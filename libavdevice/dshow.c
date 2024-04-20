@@ -697,9 +697,10 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 device = NULL;  // copied into array, make sure not freed below
             }
             else {
+                const char* media_type = NULL;
                 av_log(avctx, AV_LOG_INFO, "\"%s\"", friendly_name);
                 if (nb_media_types > 0) {
-                    const char* media_type = av_get_media_type_string(media_types[0]);
+                    media_type = av_get_media_type_string(media_types[0]);
                     av_log(avctx, AV_LOG_INFO, " (%s", media_type ? media_type : "unknown");
                     for (int i = 1; i < nb_media_types; ++i) {
                         media_type = av_get_media_type_string(media_types[i]);
@@ -712,15 +713,15 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 av_log(avctx, AV_LOG_INFO, "\n");
                 av_log(avctx, AV_LOG_INFO, "  Alternative name \"%s\"\n", unique_name);
 
-                if (advanced_got && num_index < num_size)
+                if (!advanced_got && num_index*2+1 < num_size && !strcmp(media_type, "audio"))
                 {
                     av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", numbers[num_index*2]);
                     av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", numbers[num_index*2+1]);
                 }
+
+                num_index++;
             }
         }
-
-        ++num_index;
 
     fail:
         av_freep(&media_types);
