@@ -455,9 +455,6 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
     }
 }
 
-/**
- * needs description
- */
 static void get_int_array(char* data, int size, int** dest, int* dest_size)
 {
     char numbers[32][32];
@@ -470,7 +467,7 @@ static void get_int_array(char* data, int size, int** dest, int* dest_size)
         memset(numbers[i], 0, 32);
     }
 
-    for (i = 0; i < size; i++) //asdc\r
+    for (i = 0; i < size; i++) 
     {
         if (data[i] == '\r')
         {
@@ -489,10 +486,6 @@ static void get_int_array(char* data, int size, int** dest, int* dest_size)
     }
 }
 
-
-/**
- * needs description
- */
 static int get_advanced_device_information
 (int** data, int* size)
 {
