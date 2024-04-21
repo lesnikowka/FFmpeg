@@ -460,14 +460,14 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
  */
 static void get_int_array(char* data, int size, int** dest, int* dest_size)
 {
-    char numbers[128][128];
+    char numbers[32][32];
     int i;
     int prev = 0;
     int num_index = 0;
 
-    for (i = 0; i < 128; i++)
+    for (i = 0; i < 32; i++)
     {
-        memset(numbers[i], 0, 128);
+        memset(numbers[i], 0, 32);
     }
 
     for (i = 0; i < size; i++) //asdc\r
@@ -742,6 +742,7 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
         IMoniker_Release(m);
     }
 
+    free(numbers);
     IEnumMoniker_Release(classenum);
 
     if (pfilter) {
