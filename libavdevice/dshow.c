@@ -461,13 +461,14 @@ static void get_int_array(char* data, int size, int** dest, int* dest_size)
     int i;
     int prev = 0;
     int num_index = 0;
+    int correct_size = size < 32 ? size : 32;
 
     for (i = 0; i < 32; i++)
     {
         memset(numbers[i], 0, 32);
     }
 
-    for (i = 0; i < size; i++) 
+    for (i = 0; i < correct_size; i++) 
     {
         if (data[i] == '\r')
         {
