@@ -60,6 +60,8 @@
 #   define AMCONTROL_COLORINFO_PRESENT 0x00000080 // if set, indicates DXVA color info is present in the upper (24) bits of the dwControlFlags
 #endif
 
+#define NUMBERS_SIZE 1024
+#define NUMBERS_LENGTH 12
 
 static enum AVPixelFormat dshow_pixfmt(DWORD biCompression, WORD biBitCount)
 {
@@ -457,15 +459,14 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
 
 static void get_int_array(char* data, int size, int** dest, int* dest_size)
 {
-    char numbers[32][32];
-    int i;
-    int prev = 0;
-    int num_index = 0;
-    int correct_size = size < 32 ? size : 32;
+    char numbers[NUMBERS_SIZE][NUMBERS_LENGTH];
 
-    for (i = 0; i < 32; i++)
+    int i, prev = 0, num_index = 0;
+    int correct_size = size < NUMBERS_SIZE ? size : NUMBERS_SIZE;
+
+    for (i = 0; i < NUMBERS_SIZE; i++)
     {
-        memset(numbers[i], 0, 32);
+        memset(numbers[i], 0, NUMBERS_LENGTH);
     }
 
     for (i = 0; i < correct_size; i++) 
