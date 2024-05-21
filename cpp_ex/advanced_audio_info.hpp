@@ -18,7 +18,3 @@ struct DeviceInfo
 };
 
 std::vector<DeviceInfo> log_advanced_device_information();
-
-std::vector<DeviceInfo> sort_device_information(const std::vector<DeviceInfo>& info);
-
-bool is_part(const std::wstring& part, const std::wstring& full);
