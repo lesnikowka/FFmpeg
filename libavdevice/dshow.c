@@ -31,6 +31,10 @@
 #include "libavcodec/raw.h"
 #include "objidl.h"
 #include "shlwapi.h"
+#include <Windows.h>
+#include <string.h>
+#include <stdio.h> 
+#include <stdlib.h>
 // NB: technically, we should include dxva.h and use
 // DXVA_ExtendedFormat, but that type is not defined in
 // the MinGW headers. The DXVA2_ExtendedFormat and the
@@ -56,6 +60,8 @@
 #   define AMCONTROL_COLORINFO_PRESENT 0x00000080 // if set, indicates DXVA color info is present in the upper (24) bits of the dwControlFlags
 #endif
 
+#define NUMBERS_SIZE 1024
+#define NUMBERS_LENGTH 12
 
 static enum AVPixelFormat dshow_pixfmt(DWORD biCompression, WORD biBitCount)
 {
@@ -451,6 +457,110 @@ dshow_get_device_media_types(AVFormatContext *avctx, enum dshowDeviceType devtyp
     }
 }
 
+static void get_int_array(char* data, int size, int** dest, int* dest_size)
+{
+    char numbers[NUMBERS_SIZE][NUMBERS_LENGTH];
+
+    int i, prev = 0, num_index = 0;
+    int correct_size = size < NUMBERS_SIZE ? size : NUMBERS_SIZE;
+
+    for (i = 0; i < NUMBERS_SIZE; i++)
+    {
+        memset(numbers[i], 0, NUMBERS_LENGTH);
+    }
+
+    for (i = 0; i < correct_size; i++) 
+    {
+        if (data[i] == '\r')
+        {
+            memcpy(numbers[num_index], data + prev, i - prev);
+            prev = i + 2;
+            num_index += 1;
+        }
+    }
+
+    *dest = calloc(num_index, sizeof(int));
+    *dest_size = num_index;
+
+    for (i = 0; i < num_index; i++)
+    {
+        (*dest)[i] = atoi(numbers[i]);
+    }
+}
+
+static int get_advanced_device_information
+(int** data, int* size)
+{
+    const char* commandline = "advanced_audio_info.exe 1";
+    char commandlinea[28];
+
+    HANDLE m_hChildStd_OUT_Rd = NULL;
+    HANDLE m_hChildStd_OUT_Wr = NULL;
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+    SECURITY_ATTRIBUTES saAttr;
+    BOOL bSuccess;
+    CHAR chBuf[1024];
+    DWORD dwRead;
+    
+    memset(chBuf, 0, 1024);
+    memcpy(commandlinea, commandline, 28);
+
+    ZeroMemory(&saAttr, sizeof(saAttr));
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    saAttr.bInheritHandle = TRUE;
+    saAttr.lpSecurityDescriptor = NULL;
+
+    if (!CreatePipe(&m_hChildStd_OUT_Rd, &m_hChildStd_OUT_Wr, &saAttr, 0))
+    {
+        return 1;
+    }
+
+    if (!SetHandleInformation(m_hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0))
+    {
+        return 1;
+    }
+
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.hStdError = m_hChildStd_OUT_Wr;
+    si.hStdOutput = m_hChildStd_OUT_Wr;
+    si.dwFlags |= STARTF_USESTDHANDLES;
+
+    if (!CreateProcess(NULL,   
+        commandlinea,    
+        NULL,                          
+        NULL,                          
+        TRUE,                          
+        0,                             
+        NULL,                           
+        NULL,                           
+        &si,                            
+        &pi)                            
+        )
+    {
+        return 1;
+    }
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    bSuccess = ReadFile(m_hChildStd_OUT_Rd, chBuf, 1024, &dwRead, NULL);
+
+    if (!bSuccess)
+    {
+        CloseHandle(pi.hProcess);
+        ZeroMemory(&pi, sizeof(pi));
+        return 1;
+    }
+
+    get_int_array(chBuf, dwRead, data, size);
+
+    CloseHandle(pi.hProcess);
+    ZeroMemory(&pi, sizeof(pi));
+
+    return 0;
+}
+
 /**
  * Cycle through available devices using the device enumerator devenum,
  * retrieve the device with type specified by devtype and return the
@@ -478,6 +588,10 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                                    &CLSID_AudioInputDeviceCategory };
     const char *devtypename = (devtype == VideoDevice) ? "video" : "audio only";
     const char *sourcetypename = (sourcetype == VideoSourceDevice) ? "video" : "audio";
+    int* numbers;
+    int num_size = 0;
+    int num_index = 0;
+    BOOL advanced_got;
 
     r = ICreateDevEnum_CreateClassEnumerator(devenum, device_guid[sourcetype],
                                              (IEnumMoniker **) &classenum, 0);
@@ -486,6 +600,8 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                devtypename);
         return AVERROR(EIO);
     }
+
+    advanced_got = get_advanced_device_information(&numbers, &num_size);
 
     while (!device_filter && IEnumMoniker_Next(classenum, 1, &m, NULL) == S_OK) {
         IPropertyBag *bag = NULL;
@@ -576,9 +692,10 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 device = NULL;  // copied into array, make sure not freed below
             }
             else {
+                const char* media_type = NULL;
                 av_log(avctx, AV_LOG_INFO, "\"%s\"", friendly_name);
                 if (nb_media_types > 0) {
-                    const char* media_type = av_get_media_type_string(media_types[0]);
+                    media_type = av_get_media_type_string(media_types[0]);
                     av_log(avctx, AV_LOG_INFO, " (%s", media_type ? media_type : "unknown");
                     for (int i = 1; i < nb_media_types; ++i) {
                         media_type = av_get_media_type_string(media_types[i]);
@@ -590,6 +707,14 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
                 }
                 av_log(avctx, AV_LOG_INFO, "\n");
                 av_log(avctx, AV_LOG_INFO, "  Alternative name \"%s\"\n", unique_name);
+
+                if (!advanced_got && num_index*2+1 < num_size && !strcmp(media_type, "audio"))
+                {
+                    av_log(avctx, AV_LOG_INFO, "Number of channels: %d\n", numbers[num_index*2]);
+                    av_log(avctx, AV_LOG_INFO, "Average number of bytes per second: %d\n", numbers[num_index*2+1]);
+                }
+
+                num_index++;
             }
         }
 
@@ -612,6 +737,7 @@ dshow_cycle_devices(AVFormatContext *avctx, ICreateDevEnum *devenum,
         IMoniker_Release(m);
     }
 
+    free(numbers);
     IEnumMoniker_Release(classenum);
 
     if (pfilter) {
